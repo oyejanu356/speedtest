@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Internet Speed Test</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #1d4ed8;
+            --background: #f8fafc;
+            --text: #1e293b;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 2rem;
+            background: var(--background);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            margin: 0 0 2rem 0;
+            color: var(--primary);
+        }
+
+        .status {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            background: #eff6ff;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .gauge {
+            height: 1.5rem;
+            background: #e2e8f0;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .gauge-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: var(--secondary);
+        }
+
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .result-card {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background: #f1f5f9;
+        }
+
+        .result-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Internet Speed Test</h1>
+        
+        <div class="status">
+            <button id="startTest">Start Test</button>
+            <div id="testStatus">Ready</div>
+        </div>
+
+        <div class="results">
+            <div class="result-card">
+                <div>Download Speed</div>
+                <div class="result-value" id="downloadSpeed">0 Mbps</div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="downloadGauge"></div>
+                </div>
+            </div>
+
+            <div class="result-card">
+                <div>Upload Speed</div>
+                <div class="result-value" id="uploadSpeed">0 Mbps</div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="uploadGauge"></div>
+                </div>
+            </div>
+
+            <div class="result-card">
+                <div>Latency</div>
+                <div class="result-value" id="pingTime">0 ms</div>
+                <div class="gauge">
+                    <div class="gauge-fill" id="pingGauge"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="networkInfo" style="margin-top: 2rem;">
+            <p>IP Address: <span id="ipAddress">Detecting...</span></p>
+            <p>ISP: <span id="isp">Detecting...</span></p>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Replace these with your own server endpoints
+        const TEST_SERVER = 'https://your-speedtest-server.com';
+        const ENDPOINTS = {
+            ping: '/ping',
+            download: '/download?size=',
+            upload: '/upload'
+        };
+
+        // Test parameters
+        const FILE_SIZES = {
+            small: 1 * 1024 * 1024,  // 1MB
+            medium: 5 * 1024 * 1024, // 5MB
+            large: 10 * 1024 * 1024  // 10MB
+        };
+
+        let isTesting = false;
+
+        document.getElementById('startTest').addEventListener('click', startTest);
+
+        async function startTest() {
+            if(isTesting) return;
+            isTesting = true;
+            
+            const startBtn = document.getElementById('startTest');
+            startBtn.disabled = true;
+            updateStatus('Testing network...');
+
+            try {
+                // Get network information
+                const ipInfo = await fetch('https://ipapi.co/json/');
+                const {ip, org} = await ipInfo.json();
+                document.getElementById('ipAddress').textContent = ip;
+                document.getElementById('isp').textContent = org || 'Unknown';
+
+                // Run tests
+                updateStatus('Testing latency...');
+                const ping = await testLatency();
+                
+                updateStatus('Testing download speed...');
+                const download = await testDownload();
+                
+                updateStatus('Testing upload speed...');
+                const upload = await testUpload();
+
+                // Update results
+                updateResults(ping, download, upload);
+                updateStatus('Test complete!');
+                
+            } catch(error) {
+                updateStatus(`Error: ${error.message}`);
+                console.error('Test failed:', error);
+            } finally {
+                startBtn.disabled = false;
+                isTesting = false;
+            }
+        }
+
+        async function testLatency() {
+            const start = performance.now();
+            await fetch(`${TEST_SERVER}${ENDPOINTS.ping}?t=${Date.now()}`, {
+                method: 'HEAD',
+                cache: 'no-cache'
+            });
+            const latency = performance.now() - start;
+            
+            document.getElementById('pingTime').textContent = `${latency.toFixed(1)} ms`;
+            updateGauge('pingGauge', Math.min(100, latency));
+            return latency;
+        }
+
+        async function testDownload() {
+            const start = Date.now();
+            const response = await fetch(`${TEST_SERVER}${ENDPOINTS.download}${FILE_SIZES.medium}`);
+            await response.blob();
+            const duration = (Date.now() - start) / 1000;
+            const speed = (FILE_SIZES.medium * 8) / (duration * 1000000);
+            
+            document.getElementById('downloadSpeed').textContent = `${speed.toFixed(2)} Mbps`;
+            updateGauge('downloadGauge', Math.min(100, speed));
+            return speed;
+        }
+
+        async function testUpload() {
+            const testData = new Blob([new Uint8Array(FILE_SIZES.small)]);
+            const start = Date.now();
+            await fetch(`${TEST_SERVER}${ENDPOINTS.upload}`, {
+                method: 'POST',
+                body: testData,
+                headers: {'Content-Type': 'application/octet-stream'}
+            });
+            const duration = (Date.now() - start) / 1000;
+            const speed = (FILE_SIZES.small * 8) / (duration * 1000000);
+            
+            document.getElementById('uploadSpeed').textContent = `${speed.toFixed(2)} Mbps`;
+            updateGauge('uploadGauge', Math.min(100, speed));
+            return speed;
+        }
+
+        function updateStatus(message) {
+            document.getElementById('testStatus').textContent = message;
+        }
+
+        function updateGauge(elementId, percentage) {
+            document.getElementById(elementId).style.width = `${percentage}%`;
+        }
+
+        function updateResults(ping, download, upload) {
+            console.log(`Test Results:
+                Ping: ${ping.toFixed(1)}ms
+                Download: ${download.toFixed(2)}Mbps
+                Upload: ${upload.toFixed(2)}Mbps`);
+        }
+    </script>
+</body>
+</html>
